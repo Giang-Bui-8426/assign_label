@@ -1,158 +1,189 @@
-import os, csv,json, base64, unicodedata
-from datetime import datetime
 from pymongo import MongoClient
+from datetime import datetime
+import json
+import csv
+import base64
+import os
+from typing import Dict, List, Optional
+import logging
+from dotenv import load_dotenv
+import os
 
-# ====== CẤU HÌNH MONGODB (đổi nếu cần) ======
-MONGO_URI  = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-MONGO_DB   = os.getenv("MONGO_DB", "bluebank")
-MONGO_COLL = os.getenv("MONGO_COLL", "sanpham")
+# Cấu hình logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+load_dotenv()  # tự động tìm và load file .env trong thư mục hiện tại
+key = os.getenv("Link")
 
-_client = MongoClient(MONGO_URI)
-_db = _client[MONGO_DB]
-_coll = _db[MONGO_COLL]
-_coll.create_index("Loại sản phẩm")
-_coll.create_index("Tên sản phẩm")
-
-# ====== TIỆN ÍCH NHỎ, AN TOÀN ======
-_FMT = ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d")
-
-def _norm(s: str) -> str:
-    return (s or "").strip()
-
-def _parse_date(s: str) -> str:
-    s = _norm(s)
-    if not s: return ""
-    for f in _FMT:
+class Database:
+    def __init__(self): # khởi tạo db
         try:
-            return datetime.strptime(s, f).date().isoformat()   # yyyy-mm-dd
-        except ValueError:
-            pass
-    # nếu người dùng đã nhập đúng yyyy-mm-dd thì giữ nguyên, sai thì để trống
-    try:
-        datetime.fromisoformat(s); return s
-    except Exception:
-        return ""
+            self.client = MongoClient(key)
+            self.db = self.client["database_label"]
+            self.products_collection = self.db.products
+            self.manufacturers_collection = self.db.manufacturers
+            self.importers_collection = self.db.importers
+            logger.info(f"Kết nối MongoDB thành công !" )
+            self.create_indexes()
+        except Exception as e:
+            logger.error(f"Lỗi kết nối MongoDB: {e}")
+            raise
 
-def _b64_from_path(path: str) -> str:
-    p = _norm(path)
-    if not p: return ""
-    try:
-        p = unicodedata.normalize("NFC", p)
-        with open(p, "rb") as f:
-            return base64.b64encode(f.read()).decode("utf-8")
-    except Exception:
-        return ""
-
-# ====== API CHÍNH ======
-def luu_du_lieu(
-    *,
-    tieu_de: str = "",
-    ten_san_pham: str = "",
-    loai_san_pham: str = "",
-    duong_dan_anh: str = "",
-
-    # Công ty sản xuất
-    sx_ten_cong_ty: str = "",
-    sx_dia_chi: str = "",
-    sx_sdt: str = "",
-
-    # Công ty nhập khẩu
-    nk_ten_cong_ty: str = "",
-    nk_dia_chi: str = "",
-    nk_sdt: str = "",
-
-    # Công ty xuất khẩu (nếu có)
-    xk_ten_cong_ty: str = "",
-    xk_dia_chi: str = "",
-    xk_sdt: str = "",
-
-    ngay_san_xuat: str = "",
-    ngay_het_han: str = "",
-    ngay_su_dung: str = ""
-) -> str:
-    """
-    Lưu 1 bản ghi. Bắt buộc: loai_san_pham và (duong_dan_anh hoặc Ảnh base64 tự sinh từ path).
-    Trả về id dạng chuỗi.
-    """
-    doc = {
-        "Tiêu đề": _norm(tieu_de),
-        "Tên ảnh": os.path.basename(_norm(duong_dan_anh)) if duong_dan_anh else "",
-        "Đường dẫn ảnh": _norm(duong_dan_anh),
-        "Ảnh base64": _b64_from_path(duong_dan_anh),
-
-        "Tên sản phẩm": _norm(ten_san_pham),
-        "Loại sản phẩm": _norm(loai_san_pham),
-
-        "Công ty sản xuất": {
-            "Tên công ty": _norm(sx_ten_cong_ty),
-            "Địa chỉ": _norm(sx_dia_chi),
-            "Số điện thoại": _norm(sx_sdt),
-        },
-        "Công ty nhập khẩu": {
-            "Tên công ty": _norm(nk_ten_cong_ty),
-            "Địa chỉ": _norm(nk_dia_chi),
-            "Số điện thoại": _norm(nk_sdt),
-        },
-        "Công ty xuất khẩu": {
-            "Tên công ty": _norm(xk_ten_cong_ty),
-            "Địa chỉ": _norm(xk_dia_chi),
-            "Số điện thoại": _norm(xk_sdt),
-        },
-
-        "Ngày sản xuất": _parse_date(ngay_san_xuat),
-        "Ngày hết hạn": _parse_date(ngay_het_han),
-        "Ngày sử dụng": _parse_date(ngay_su_dung),
-    }
-
-    # kiểm tra tối giản — tránh lằng nhằng
-    if not doc["Loại sản phẩm"]:
-        raise ValueError("Thiếu 'Loại sản phẩm'.")
-    if not (doc["Đường dẫn ảnh"] or doc["Ảnh base64"]):
-        raise ValueError("Thiếu ảnh (đường dẫn hoặc base64).")
-
-    # check logic ngày nếu có đủ cặp
-    if doc["Ngày sản xuất"] and doc["Ngày hết hạn"]:
+    def create_indexes(self): # tạo index
         try:
-            if datetime.fromisoformat(doc["Ngày hết hạn"]) < datetime.fromisoformat(doc["Ngày sản xuất"]):
-                raise ValueError("Ngày hết hạn sớm hơn ngày sản xuất.")
-        except Exception:
-            # nếu format không hợp lệ thì bỏ qua (đã cố parse ở trên)
-            pass
+            self.products_collection.create_index("image_name")
+            self.products_collection.create_index("type")
+            self.manufacturers_collection.create_index("company_name")
+            self.importers_collection.create_index("company_name")
+        except Exception as e:
+            logger.error(f"Lỗi tạo indexes: {e}")
 
-    res = _coll.insert_one(doc)
-    return str(res.inserted_id)
+    def insert_product(self, data):
+        if not data:
+            return False
+        try:
+            # Lưu manufacturer
+            manufacturer_id = self.manufacturers_collection.insert_one(
+                data.get('manufacturer', {})
+            ).inserted_id
+            # Lưu importer
+            importer_id = self.importers_collection.insert_one(
+                data.get('importer', {})
+            ).inserted_id # insert vào collection và lấy biến id của document thêm vào
+            # Lưu product
+            document = {
+                "image_name": data.get('image_name', ''),
+                "image_path": data.get('image_path', ''),
+                "image_base64": data.get('image_base64', ''),
+                "product_name": data.get('product_name', ''),
+                "manufacturer_id": manufacturer_id,
+                "importer_id": importer_id,
+                "manufacturing_date": self.convert_date_format(data.get('manufacturing_date', '')),
+                "expiry_date": self.convert_date_format(data.get('expiry_date', '')),
+                "type": data.get('type', ''),
+                "created_at": datetime.now(),
+                "updated_at": datetime.now()
+            }
+            self.products_collection.insert_one(document)
+            return True
+        except Exception as e:
+            logger.error(f"Lỗi thêm sản phẩm: {e}")
+            return False
+    def insert_label(self,datas):
+        sv_manufac = []
+        sv_importer = []
+        if not datas:
+            return False
+        try:
+            for data in datas:
+                sv_manufac.append(data.get('manufacturer', {}));
+                sv_importer.append(data.get('importer', {}));
+                
+            manu_id = self.manufacturers_collection.insert_many(sv_manufac).insert_id
+            import_id = self.importers_collection.insert_many(sv_importer).insert_id
+            docs = []
+            for j in range(len(sv_importer)):
+                doc = {
+                    "image_name": data.get('image_name', ''),
+                    "image_path": data.get('image_path', ''),
+                    "image_base64": data.get('image_base64', '') or self.image_to_base64(data.get('image_path', '')),
+                    "product_name": data.get('product_name', ''),
+                    "manufacturer_id": manu_id[j],
+                    "importer_id": import_id[j],
+                    "manufacturing_date": self.convert_date_format(data.get('manufacturing_date', '')),
+                    "expiry_date": self.convert_date_format(data.get('expiry_date', '')),
+                    "type": data.get('type', ''),
+                    "created_at": datetime.now(),
+                    "updated_at": datetime.now()
+                    }
+                docs.append(doc)
+                db.products_collection.insert_many(docs)
+                return True
+        except Exception as e:
+            logger.error(f"Lỗi thêm sản phẩm: {e}")
+            return False
+    def get_all_products(self) -> List[Dict]:
+        try:
+            pipeline = [
+                {
+                    "$lookup": {
+                        "from": "manufacturers",
+                        "localField": "manufacturer_id",
+                        "foreignField": "_id",
+                        "as": "manufacturer"
+                    }
+                },
+                {"$unwind": {"path": "$manufacturer", "preserveNullAndEmptyArrays": True}},
+                {
+                    "$lookup": {
+                        "from": "importers",
+                        "localField": "importer_id",
+                        "foreignField": "_id",
+                        "as": "importer"
+                    }
+                },
+                {"$unwind": {"path": "$importer", "preserveNullAndEmptyArrays": True}}, # chuyển 
+                {
+                    "$project": {
+                        "_id": 0,
+                        "image_name": 1,
+                        "image_path": 1,
+                        "image_base64": 1,
+                        "product_name": 1,
+                        "manufacturer": 1,
+                        "importer": 1,
+                        "manufacturing_date": 1,
+                        "expiry_date": 1,
+                        "type": 1
+                    } # chỉ định những field sẽ được lấy 
+                }
+            ]
+            return list(self.products_collection.aggregate(pipeline))
+        except Exception as e:
+            logger.error(f"Lỗi lấy danh sách sản phẩm: {e}")
+            return []
+def update_product(self, image_name, data) -> bool:
+    try:
+        # Tìm product theo image_name
+        product = self.products_collection.find_one({"image_name": image_name})
+        if not product:
+            logger.warning(f"Không tìm thấy sản phẩm: {image_name}")
+            return False
+        
+        # Cập nhật manufacturer nếu có
+        if "manufacturer" in data:
+            self.manufacturers_collection.update_one(
+                {"_id": product["manufacturer_id"]},
+                {"$set": data["manufacturer"]}
+            )
+        
+        # Cập nhật importer nếu có
+        if "importer" in data:
+            self.importers_collection.update_one(
+                {"_id": product["importer_id"]},
+                {"$set": data["importer"]}
+            )
+        
+        # Cập nhật product
+        update_fields = {
+            "product_name": data.get("product_name", product["product_name"]),
+            "manufacturing_date": self.convert_date_format(data.get("manufacturing_date", "")),
+            "expiry_date": self.convert_date_format(data.get("expiry_date", "")),
+            "type": data.get("type", product["type"]),
+            "updated_at": datetime.now()
+        }
+        
+        self.products_collection.update_one(
+            {"_id": product["_id"]},
+            {"$set": update_fields}
+        )
 
-def xuat_csv(duong_dan_file: str, loai_filter: str = "") -> None:
-    """
-    Xuất CSV theo 'Loại sản phẩm' (để trống -> xuất tất cả)
-    Cột CSV giữ nguyên tên cột tiếng Việt, phẳng hoá các trường lồng nhau.
-    """
-    query = {"Loại sản phẩm": _norm(loai_filter)} if _norm(loai_filter) else {}
-    rows = _coll.find(query).sort([("_id", -1)])
+        logger.info(f"Cập nhật thành công sản phẩm: {image_name}")
+        return True
 
-    header = [
-        "Tiêu đề",
-        "Tên ảnh", "Đường dẫn ảnh", "Ảnh base64",
-        "Tên sản phẩm", "Loại sản phẩm",
-        "Công ty sản xuất.Tên công ty", "Công ty sản xuất.Địa chỉ", "Công ty sản xuất.Số điện thoại",
-        "Công ty nhập khẩu.Tên công ty", "Công ty nhập khẩu.Địa chỉ", "Công ty nhập khẩu.Số điện thoại",
-        "Công ty xuất khẩu.Tên công ty", "Công ty xuất khẩu.Địa chỉ", "Công ty xuất khẩu.Số điện thoại",
-        "Ngày sản xuất", "Ngày hết hạn", "Ngày sử dụng",
-    ]
+    except Exception as e:
+        logger.error(f"Lỗi cập nhật sản phẩm: {e}")
+        return False
 
-    with open(duong_dan_file, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(header)
-        for d in rows:
-            sx = d.get("Công ty sản xuất", {}) or {}
-            nk = d.get("Công ty nhập khẩu", {}) or {}
-            xk = d.get("Công ty xuất khẩu", {}) or {}
-            w.writerow([
-                d.get("Tiêu đề",""),
-                d.get("Tên ảnh",""), d.get("Đường dẫn ảnh",""), d.get("Ảnh base64",""),
-                d.get("Tên sản phẩm",""), d.get("Loại sản phẩm",""),
-                sx.get("Tên công ty",""), sx.get("Địa chỉ",""), sx.get("Số điện thoại",""),
-                nk.get("Tên công ty",""), nk.get("Địa chỉ",""), nk.get("Số điện thoại",""),
-                xk.get("Tên công ty",""), xk.get("Địa chỉ",""), xk.get("Số điện thoại",""),
-                d.get("Ngày sản xuất",""), d.get("Ngày hết hạn",""), d.get("Ngày sử dụng",""),
-            ])
+    def close_connection(self):
+        self.client.close()
