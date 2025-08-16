@@ -57,9 +57,19 @@ def insert_database(data = None,tmp = False):
     if tmp and datas:
         db.insert_label(datas)
         datas.clear()
-             
-def update_database(data,....): ################## viết hàm này data update sẽ truyền vào hàm update trong database của t
-    pass 
+    #hàm update data         
+def update_database(data, image_name):
+    if not data or not image_name:
+        Messagebox.show_error("Lỗi", "Thiếu dữ liệu hoặc tên ảnh!")
+        return False
+
+    result = db.update_product(image_name, data)
+    if result:
+        Messagebox.show_info("Thành công", f"Cập nhật sản phẩm {image_name} thành công!")
+    else:
+        Messagebox.show_error("Thất bại", f"Cập nhật sản phẩm {image_name} thất bại!")
+    return result
+
 def validate_data(stats,folder,images,idx,frame):
     list_stats = []
     image_base64 = image_to_base64(os.path.join(folder,images[idx]))
@@ -71,27 +81,27 @@ def validate_data(stats,folder,images,idx,frame):
     if not any(stats):
         Messagebox.show_error("Lỗi", "Vui lòng nhập thông tin!")
         return
-    ####################
-    # viết hàm kiểm tra dữ liệu nếu có 1 cái nào sai báo lỗi và kết thúc hàm 
     
-    ###########
-    # viết lại info_Text sao cho nó in ra đúng định dạng
-    info_text = info_text = (
-            f"Tên sản phẩm: {stats[""]}\n"
-            f"Nhà sản xuất:\n"
-            f"    Tên: {stats[1]}\n"
-            f"    Địa chỉ: {stats[2]}\n"
-            f"    SĐT: {stats[3]}\n"
-            f"Nhà phân phối:\n"
-            f"    Tên: {stats[4]}\n"
-            f"    Địa chỉ: {stats[5]}\n"
-            f"    SĐT: {stats[6]}\n"
-            f"Ngày sản xuất: {stats[7]}\n"
-            f"Hạn sử dụng: {stats[8]}\n"
-            f"Loại sản phẩm: {stats[9]}"
-        )
+    if not check_valid_data(stats):
+        return
 
-        # Hộp thoại hỏi yes no
+      ###########
+    # viết lại info_Text sao cho nó in ra đúng định dạng
+    info_text = info_text(
+    f"Tên sản phẩm: {stats.get('product_name', '')}\n"
+    f"Nhà sản xuất:\n"
+    f"    Tên: {stats.get('manufacturer', {}).get('company_name', '')}\n"
+    f"    Địa chỉ: {stats.get('manufacturer', {}).get('address', '')}\n"
+    f"    SĐT: {stats.get('manufacturer', {}).get('phone', '')}\n"
+    f"Nhà phân phối:\n"
+    f"    Tên: {stats.get('importer', {}).get('company_name', '')}\n"
+    f"    Địa chỉ: {stats.get('importer', {}).get('address', '')}\n"
+    f"    SĐT: {stats.get('importer', {}).get('phone', '')}\n"
+    f"Ngày sản xuất: {stats.get('manufacturing_date', '')}\n"
+    f"Hạn sử dụng: {stats.get('expiry_date', '')}\n"
+    f"Loại sản phẩm: {stats.get('type', '')}"
+)
+            # Hộp thoại hỏi yes no
     confirm = Messagebox.yesno()(
             "Xác nhận thông tin",
             f"Bạn đã nhập:\n\n{info_text}\n\nBạn có chắc chắn muốn lưu?"
@@ -114,4 +124,59 @@ def validate_data(stats,folder,images,idx,frame):
         #insert_database(list_stats)
     else:
         Messagebox.show_info("Hủy", "Dữ liệu chưa được lưu.")
+    ####################
+    # viết hàm kiểm tra dữ liệu nếu có 1 cái nào sai báo lỗi và kết thúc hàm 
+def check_valid_data(stats):
+    # Kiểm tra tên sản phẩm
+    if not stats.get("product_name") or not chuan_hoa_chuoi(stats["product_name"]):
+        Messagebox.show_error("Lỗi", "Tên sản phẩm không hợp lệ!")
+        return False
+    
+    # Kiểm tra nhà sản xuất
+    manufacturer = stats.get("manufacturer", {})
+    if not manufacturer.get("company_name") or not chuan_hoa_chuoi(manufacturer["company_name"]):
+        Messagebox.show_error("Lỗi", "Tên nhà sản xuất không hợp lệ!")
+        return False
+    if not manufacturer.get("address"):
+        Messagebox.show_error("Lỗi", "Địa chỉ nhà sản xuất không được để trống!")
+        return False
+    if not manufacturer.get("phone") or not manufacturer["phone"].isdigit():
+        Messagebox.show_error("Lỗi", "SĐT nhà sản xuất phải là số!")
+        return False
+
+    # Kiểm tra nhà phân phối
+    importer = stats.get("importer", {})
+    if not importer.get("company_name") or not chuan_hoa_chuoi(importer["company_name"]):
+        Messagebox.show_error("Lỗi", "Tên nhà phân phối không hợp lệ!")
+        return False
+    if not importer.get("address"):
+        Messagebox.show_error("Lỗi", "Địa chỉ nhà phân phối không được để trống!")
+        return False
+    if not importer.get("phone") or not importer["phone"].isdigit():
+        Messagebox.show_error("Lỗi", "SĐT nhà phân phối phải là số!")
+        return False
+
+    # Kiểm tra ngày sản xuất, hạn sử dụng
+    nsx = stats.get("manufacturing_date", "")
+    hsd = stats.get("expiry_date", "")
+    if not check_date_format(nsx):
+        Messagebox.show_error("Lỗi", "Ngày sản xuất không đúng định dạng dd/mm/YYYY!")
+        return False
+    if not check_date_format(hsd):
+        Messagebox.show_error("Lỗi", "Hạn sử dụng không đúng định dạng dd/mm/YYYY!")
+        return False
+    if datetime.strptime(hsd, "%d/%m/%Y") <= datetime.strptime(nsx, "%d/%m/%Y"):
+        Messagebox.show_error("Lỗi", "Hạn sử dụng phải lớn hơn ngày sản xuất!")
+        return False
+
+    # Kiểm tra loại sản phẩm
+    if not stats.get("type") or not chuan_hoa_chuoi(stats["type"]):
+        Messagebox.show_error("Lỗi", "Loại sản phẩm không hợp lệ!")
+        return False
+
+    return True
+    
+
+
+
     
