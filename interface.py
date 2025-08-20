@@ -5,63 +5,96 @@ import tkinter as tk
 import re
 from datetime import datetime
 import os
+from tkinter import messagebox as mb
 from PIL import Image, ImageTk
 from functools import partial
-from ttkbootstrap.dialogs import Messagebox
-from logic import check_folder
-from logic import insert_database
+from logic import check_folder,insert_database,export_csv,export_json
+import csv
+import json
+import tkinter.font as tkFont
+from database import Database
+
 
 image_files = []
 index_img = 0
-def show_image(folder, filename, label_widget, size=(700, 700)):
+db = Database()
+def load_index(folder_path): # load index save
+    global index_img
+    if os.path.exists("storesIndex.json"):
+        with open("storesIndex.json") as file:
+            stores = json.load(file)
+            if stores["folder_path"] == folder_path:
+                if db.get_product(image_files[index_img]):
+                    index_img = stores["last_index"]+1
+                else:
+                    index_img=stores["last_index"]
+def show_image(folder, filename, label_widget, size=(1200, 800),rotate_angle=0):
     image_path = os.path.join(folder, filename)
     if not os.path.exists(image_path):
         label_widget.config(text="Không tìm thấy ảnh", image="")
-        return
-    img = Image.open(image_path) # mở file đọc ảnh
-    img.thumbnail(size, Image.Resampling.LANCZOS) #resize kích thước 
-    img_tk = ImageTk.PhotoImage(img) # trung gian tkinter và pillow
+        return      
+    try:
+        img = Image.open(image_path) # mở file đọc ảnh
+        img.thumbnail(size, Image.Resampling.LANCZOS) #resize kích thước 
+        img_tk = ImageTk.PhotoImage(img) # trung gian tkinter và pillow
+        
+        label_widget.image = img_tk # lưu img vào biến của tkinter 
+        label_widget.config(image=img_tk, text="") # thay đổi tt hiển thị lên ảnh 
+    except Exception as e:
+        label_widget.config(text=f"Lỗi load ảnh: {e} or bạn đã gán hết nhãn", image="")
     
-    label_widget.image = img_tk # lưu img vào biến của tkinter 
-    label_widget.config(image=img_tk, text="") # thay đổi tt hiển thị lên ảnh 
-    
-def handle_files(folder_path,img_label): # xử lí lấy file hình ảnh
+def handle_files(folder_path, img_label): # xử lí lấy file hình ảnh
     global image_files
+    global index_img
     try:
         files = os.listdir(folder_path)
         image_files = [f for f in files if f.lower().endswith((".png", ".jpg", ".jpeg", ".gif"))] # kiểm tra đuôi hình ảnh
         if image_files:
-            index_img = 0
+            load_index(folder_path)
             show_image(folder_path, image_files[index_img], img_label)
+        else:
+            img_label.config(text="Không có ảnh trong folder")
     except Exception as e:
         img_label.config(text=f"Lỗi: {e}")
-def next_image(folder, frame):
+def next_image(folder, frame,stats):
     global index_img
     if not image_files:
         return
     index_img = (index_img + 1) % len(image_files)  # quay vòng
     show_image(folder, image_files[index_img], frame)
+    from logic import load_data
+    load_data(stats,image_files[index_img])
+    return
 
-def prev_image(folder, frame):
+def prev_image(folder, frame,stats):
     global index_img
     if not image_files:
         return
     index_img = (index_img - 1) % len(image_files)  # quay vòng
     show_image(folder, image_files[index_img], frame)
-def on_close():
-    if Messagebox.okcancel("Thoát", "Đóng ứng dụng ?"):
+    from logic import load_data
+    load_data(stats,image_files[index_img])
+    return
+    
+def on_close(second,frame,folder):
+    if mb.askokcancel("Xác nhận", "Bạn có muốn đóng ứng dụng không"):
         insert_database(tmp = True)
+        save = {"folder_path" : folder,"last_index" : index_img}
+        with open("storesIndex.json","w") as file:
+            json.dump(save,file)
         second.destroy()
-
+        frame.deiconify()
 def open_second_window(app,folder):
-    variable_name ={"product_name" :"" ,"manufacturer" : {"name_nhap" :"" , "adress_nhap" : "", "sdt_nhap" : ""},
-                    "importer" : {"name_xuat" : "", "address_xuat" : "","sdt_xuat":""}
-                    ,"manufacturing_date" : "", "expiry_date" : "", "type" : ""}
+    variable_name ={"product_name" :"" ,
+                    "importer" : {"name_nhap" :"" , "address_nhap" : "", "sdt_nhap" : ""},
+                    "manufacturer" : {"name_xuat" : "", "address_xuat" : "","sdt_xuat":""}
+                    ,"manufacturing_date" : "", "expiry_date" : "", "type" : ""
+                    }
     
 
     second = tb.Toplevel(app)
     second.title("Assign dataset")
-    second.geometry("1200x1100")
+    second.geometry("1500x1100")
 
     main_pane = tb.Frame(second)
     main_pane.pack(fill="both", expand=True)
@@ -75,11 +108,11 @@ def open_second_window(app,folder):
     img_label = tb.Label(right_frame, text="No image", anchor="center")
     img_label.pack(fill="both", expand=True)
     handle_files(folder,img_label)
-    
+
     container = tb.Frame(left_frame)
     container.pack(fill="both", expand=True)
 
-    canvas = tk.Canvas(container)
+    canvas = tb.Canvas(container)
     canvas.pack(side=LEFT, fill="both", expand=True)
     # khai báo thanh cuộn
     scrollbar = tb.Scrollbar(container, orient="vertical", command=canvas.yview)
@@ -94,6 +127,12 @@ def open_second_window(app,folder):
         canvas.configure(scrollregion=canvas.bbox("all"))
     scroll_frame.bind("<Configure>", on_frame_configure)
     
+
+    def on_window_resize(event,folder):
+        window_width = second.winfo_width()
+        img_size = min(1000, int(window_width * 0.4))
+        show_image(folder,image_files[index_img], img_label, (img_size, img_size))
+                        
     # lăng chuột
     def _on_mouse_wheel(event):
         canvas.yview_scroll(int(-1*(event.delta/120)), "units")
@@ -101,43 +140,88 @@ def open_second_window(app,folder):
         canvas.configure(scrollregion=canvas.bbox("all"))
     scroll_frame.bind("<Configure>", on_frame_configure)
 
-    def Entry(root, text, var_name, pad_x=30,pad_y=5,size_font=12,width_entry = 60,padx_entry=10): # hàm tạo entry
-        global image_files
-        frame = tb.Frame(root)
-        frame.pack(pady=pad_y,padx=pad_x,fill="x",expand=True)
-        tb.Label(frame, text=text, width=20, anchor="w", font=("Segoe UI", size_font)).pack(padx=pad_x,side=LEFT,fill="both",expand=True,pady=pad_y)
-        entry_widget = tb.Entry(frame, width=width_entry)
-        entry_widget.pack(side=LEFT,pady=pad_y,padx=padx_entry,expand=True,fill="both")
-        variable_name[var_name] = entry_widget  # Gán biến toàn cục
+    def create_entry_field(parent, label_text, var_path, label_width=20):
+        """Tạo entry field responsive với layout pack"""
+        frame = tb.Frame(parent)
+        frame.pack(fill="x", padx=10, pady=4)
+        
+        # Label bên trái với width cố định
+        label = tb.Label(frame, text=label_text, width=label_width, anchor="w", 
+                        font=("Segoe UI", 11))
+        label.pack(side=LEFT)
+        
+        # Entry bên phải - sẽ expand theo width với minimum width
+        entry = tb.Entry(frame, font=("Segoe UI", 11), width=40)
+        entry.pack(side=LEFT, padx=(10, 5), fill="x", expand=True)
+        
+        # Lưu entry vào variable_name theo đường dẫn
+        keys = var_path.split(".")
+        tmp = variable_name
+        for k in keys[:-1]:
+            tmp = tmp[k]
+        tmp[keys[-1]] = entry
+        
+        return frame
 
-    tb.Label(scroll_frame,text="ĐÁNH NHÃN SẢN PHẨM",font=("Segoe UI",20,"bold")).pack(anchor="w",fill = "both",padx=170,expand=True)
-    # Các ô nhập
-    Entry(scroll_frame, "Tên sản phẩm : ","product_name",pad_y = (70,5),pad_x=5,size_font=15,width_entry=50,padx_entry=10)
-    tb.Label(scroll_frame, text="Công Ty Nhập Khẩu:", font=("Segoe UI", 15)).pack(anchor="w", pady=(5, 3),expand=True,fill="both")
-    Entry(scroll_frame, "Tên : ", variable_name["manufacturer"]["name_nhap"])
-    Entry(scroll_frame, "Địa chỉ : ", variable_name["manufacturer"]["adress_nhap"])
-    Entry(scroll_frame, "Số điện thoại : ", variable_name["manufacturer"]["sdt_nhap"])
+    # Header
+    header_frame = tb.Frame(scroll_frame)
+    header_frame.pack(fill="x", padx=15, pady=(15, 20))
+    tb.Label(header_frame, text="ĐÁNH NHÃN SẢN PHẨM", 
+             font=("Segoe UI", 18, "bold")).pack(anchor="w")
 
-    tb.Label(scroll_frame, text="Công Ty Sản Xuất:", font=("Segoe UI", 15)).pack(anchor="w", pady=(5, 3),expand=True,fill="both")
-    Entry(scroll_frame, "Tên : ", variable_name["importer"]["name_xuat"])
-    Entry(scroll_frame, "Địa chỉ : ", variable_name["importer"]["address_xuat"])
-    Entry(scroll_frame, "Số điện thoại : ", variable_name["importer"]["sdt_xuat"])
+    # Tên sản phẩm
+    create_entry_field(scroll_frame, "Tên sản phẩm:", "product_name")
+    
+    # Separator
+    tb.Separator(scroll_frame, orient="horizontal").pack(fill="x", padx=15, pady=12)
 
-    Entry(scroll_frame, "Ngày Sản Xuất : ", "manufacturing_date",pad_x=5,size_font=15,width_entry=50,padx_entry=10)
-    Entry(scroll_frame, "Hạn Sử Dụng : ", "expiry_date",pad_x=5,size_font=15,width_entry=50,padx_entry=10)
-    Entry(scroll_frame, "Loại Sản Phẩm : ", "type",pad_x=5,size_font=15,width_entry=50,padx_entry=10)
-    canvas.bind_all("<MouseWheel>", _on_mouse_wheel)
+    # Công ty nhập khẩu
+    importer_frame = tb.LabelFrame(scroll_frame, text="Công Ty Nhập Khẩu", 
+                                  padding=15, style="info.TLabelframe")
+    importer_frame.pack(fill="x", padx=15, pady=8)
+    
+    create_entry_field(importer_frame, "Tên công ty:", "importer.name_nhap")
+    create_entry_field(importer_frame, "Địa chỉ:", "importer.address_nhap")
+    create_entry_field(importer_frame, "Số điện thoại:", "importer.sdt_nhap")
+
+    # Công ty sản xuất
+    manufacturer_frame = tb.LabelFrame(scroll_frame, text="Công Ty Sản Xuất", 
+                                      padding=15, style="warning.TLabelframe")
+    manufacturer_frame.pack(fill="x", padx=15, pady=8)
+    
+    create_entry_field(manufacturer_frame, "Tên công ty:", "manufacturer.name_xuat")
+    create_entry_field(manufacturer_frame, "Địa chỉ:", "manufacturer.address_xuat")
+    create_entry_field(manufacturer_frame, "Số điện thoại:", "manufacturer.sdt_xuat")
+
+    # Separator
+    tb.Separator(scroll_frame, orient="horizontal").pack(fill="x", padx=15, pady=12)
+
+    # Thông tin sản phẩm
+    product_info_frame = tb.LabelFrame(scroll_frame, text="Thông Tin Sản Phẩm", padding=15, style="success.TLabelframe")
+    product_info_frame.pack(fill="x", padx=15, pady=8)
+    
+    create_entry_field(product_info_frame, "Ngày sản xuất:", "manufacturing_date")
+    create_entry_field(product_info_frame, "Hạn sử dụng:", "expiry_date")
+    create_entry_field(product_info_frame, "Loại sản phẩm:", "type")
                 
 
     btn_frame = tb.Frame(scroll_frame)
     btn_frame.pack(pady=10)
-    tb.Button(btn_frame, text="Prev", bootstyle=WARNING, command=partial(next_image,folder,img_label)).pack(side=LEFT, padx=5,fill="both",expand=True)
-    tb.Button(btn_frame, text="Xác Nhận", bootstyle=SUCCESS, command=partial(validate_data,variable_name,folder,image_files,index_img,img_label)).pack(side=LEFT, padx=5,expand=True,fill="both")
-    tb.Button(btn_frame, text="Next", bootstyle=PRIMARY,command=partial(prev_image,folder,img_label)).pack(side=LEFT, padx=5,expand=True,fill="both")
+    tb.Button(btn_frame, text="Prev", bootstyle=WARNING, command=lambda:prev_image(folder,img_label,variable_name)).pack(side=LEFT, padx=5,fill="both",expand=True)
+    tb.Button(btn_frame, text="Xác Nhận", bootstyle=SUCCESS, command=lambda:validate_data(variable_name,folder,image_files,index_img,img_label)).pack(side=LEFT, padx=5,expand=True,fill="both")
+    tb.Button(btn_frame, text="Next", bootstyle=PRIMARY,command=lambda:validate_data(variable_name,folder,image_files,index_img,img_label)).pack(side=LEFT, padx=5,expand=True,fill="both")
+    
+    export_frame = tb.Frame(scroll_frame)
+    export_frame.pack(pady=10)
 
-    second.protocol("WM_DELETE_WINDOW", on_close)
+    tb.Button(export_frame, text="Xuất CSV", bootstyle=INFO,command=lambda: export_csv("label.csv")).pack(side=LEFT, padx=10)
+    tb.Button(export_frame, text="Xuất JSON", bootstyle=INFO,command=lambda: export_json("label.json")).pack(side=LEFT, padx=10)
+    second.protocol("WM_DELETE_WINDOW", partial(on_close,second,app,folder))
+    
+    
 
     canvas.bind_all("<MouseWheel>", _on_mouse_wheel)
+    second.bind("<Configure>", lambda e: on_window_resize(e,folder))
 if __name__ == "__main__":
     app = tb.Window(themename="cosmo")
     app.title("Tra Cứu Sản Phẩm")
@@ -152,5 +236,5 @@ if __name__ == "__main__":
         folder = tb.Entry(frame, width=50, justify="center")
         folder.pack(side=LEFT, padx=5)
 
-    tb.Button(app, text="Xác Nhận", bootstyle=SUCCESS, command=partial(check_folder,app,folder)).pack( padx=20, pady=10)
+    tb.Button(app, text="Xác Nhận", bootstyle=SUCCESS, command=lambda:check_folder(app,folder)).pack( padx=20, pady=10)
     app.mainloop()
