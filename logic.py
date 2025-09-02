@@ -1,8 +1,6 @@
-
 from database import Database
 from datetime import datetime
 import os
-from functools import partial
 import base64
 import tkinter.messagebox as mb
 import re

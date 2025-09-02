@@ -1,14 +1,12 @@
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
-from logic import validate_data
 import tkinter as tk
-import re
 from datetime import datetime
 import os
 from tkinter import messagebox as mb
 from PIL import Image, ImageTk
 from functools import partial
-from logic import check_folder,insert_database,export_csv,export_json
+from logic import check_folder,insert_database,export_csv,export_json,validate_data
 import csv
 import json
 import tkinter.font as tkFont
@@ -232,7 +230,7 @@ if __name__ == "__main__":
     for text in labels:
         frame = tb.Frame(app)
         frame.pack(pady=5, padx=10, fill="x")
-        tb.Label(frame, text=text, width=20).pack(side=LEFT)
+        tb.Label(frame, text="Nhập folder:", width=20).pack(side=LEFT)
         folder = tb.Entry(frame, width=50, justify="center")
         folder.pack(side=LEFT, padx=5)
 

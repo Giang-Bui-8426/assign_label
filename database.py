@@ -1,10 +1,5 @@
 from pymongo import MongoClient
 from datetime import datetime
-import json
-import csv
-import base64
-import os
-from typing import Dict, List, Optional
 import logging
 from dotenv import load_dotenv
 import os
@@ -35,7 +30,6 @@ class Database:
             self.products_collection.create_index("image_name", unique=True, background=True)
             self.products_collection.create_index("importer_id",background=True)
             self.products_collection.create_index("manufacturer_id",background=True)
-            self.manufacturers_collection.create_index("_id",,background=True)
         except Exception as e:
             logger.error(f"Lỗi tạo indexes: {e}")
 
@@ -147,13 +141,14 @@ class Database:
                         "image_base64": 1,
                         "product_name": 1,
                         "manufacturer": {
-                            "name": "$manufacturer.name",
-                            "address": "$manufacturer.address",
-                            "phone": "$manufacturer.phone"
+                            "name": "$manufacturer.name_xuat",
+                            "address": "$manufacturer.address_xuat",
+                            "phone": "$manufacturer.sdt_xuat"
                             },
                         "importer": {
-                            "name": "$importer.name",
-                            "address": "$importer.address"
+                            "name": "$importer.name_nhap",
+                            "address": "$importer.address_nhap",
+                            "phone": "$manufacturer.sdt_nhap"
                         },
                         "manufacturing_date": 1,
                         "expiry_date": 1,
