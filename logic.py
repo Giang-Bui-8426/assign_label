@@ -85,9 +85,9 @@ def date_format(date_str):
 def check_text(text):
     text = text.strip()
     # Cho chữ cái thường + hoa, số, khoảng trắng, dấu gạch ngang, gạch dưới, và unicode (dấu tiếng Việt)
-    if re.search(r"[^a-zA-Z0-9À-ỹ\s\-_]", text):
-        return False
-    return True
+    if re.search(r"[^a-zA-Z0-9À-ỹ\s\-_\/]", text):
+        return None
+    return text
 def flatten_dict(doc, parent_key='', sep='.'):
     #Hàm giúp chuyển dich lồng thành dạng phẳng để ghi CSV dễ dàng.
     items = []
