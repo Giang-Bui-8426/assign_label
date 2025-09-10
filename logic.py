@@ -11,12 +11,25 @@ from collections import OrderedDict
 
 db = Database()
 datas = []
+def tranfer_data_json(o):
+    if isinstance(o, datetime):
+        return o.strftime("%d/%m/%Y")
+    return str(o)
+def encode_image(image_path):
+    try:
+        with open(image_path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    except Exception as e:
+        print(f"Lỗi chuyển base64: {e}")
+        return ""
+def sort_doc(doc, csv=False):
+    b64 = doc.get("image_base64", "")
+    base64_val = (b64[:30] + "..." + b64[-30:]) if (csv and b64) else b64
 
-def sort_doc(doc):
     return OrderedDict([
         ("image_name", doc.get("image_name")),
         ("image_path", doc.get("image_path")),
-        ("image_base64", image_to_base64(doc.get("image_path"))),
+        ("image_base64", base64_val),
         ("product_name", doc.get("product_name")),
         ("manufacturer", doc.get("manufacturer", {})),
         ("importer", doc.get("importer", {})),
@@ -33,14 +46,13 @@ def is_empty(doc):
             if v.strip():  # có chữ
                 return False
     return True
-def convert_date_format(date_str):  # chuyển chuỗi sang định dạng time
-        if not date_str or not date_str.strip():
-            return ""
-        try:
-            return datetime.strptime(date_str.strip(), '%d/%m/%Y')
-        except ValueError as e:
-            print("error : {e}")
-            return date_str
+def convert_date_format(date_str):
+    if not date_str or not date_str.strip():
+        return None
+    try:
+        return datetime.strptime(date_str.strip(), "%d/%m/%Y")
+    except ValueError:
+        return None
 def load_data(stats,name_image):
     try:
         doc = next((d for d in datas if d.get("image_name") == name_image), {})
@@ -67,8 +79,8 @@ def image_to_base64(image_path): # chuyen doi base64
         return ""
 def check_folder(frame,folder):
     folder_path = folder.get().strip()
-    if folder_path and not os.path.exists(folder_path):
-        mb.showerror("Sai Folder", "Lỗi")
+    if not folder_path and not os.path.exists(folder_path):
+        mb.showerror("Lỗi đường truyền thư mục ảnh ", "Lỗi")
     else:
         from interface import open_second_window
         open_second_window(frame,folder_path)
@@ -84,10 +96,11 @@ def date_format(date_str):
         return False
 def check_text(text):
     text = text.strip()
-    # Cho chữ cái thường + hoa, số, khoảng trắng, dấu gạch ngang, gạch dưới, và unicode (dấu tiếng Việt)
-    if re.search(r"[^a-zA-Z0-9À-ỹ\s\-_]", text):
-        return False
-    return True
+    if not text:
+        return None
+    if re.search(r"[!@#$%^&*?\":{}|<>]", text):
+        return None
+    return text
 def flatten_dict(doc, parent_key='', sep='.'):
     #Hàm giúp chuyển dich lồng thành dạng phẳng để ghi CSV dễ dàng.
     items = []
@@ -105,7 +118,7 @@ def export_csv(filename):
     if not docs:
         print("Không có dữ liệu để xuất CSV.")
         return
-    docs = [sort_doc(d) for d in docs]
+    docs = [sort_doc(d,True) for d in docs]
     # Flatten dicts để lấy đủ trường trong CSV (nhất là trường nested)
     flat_docs = [flatten_dict(doc) for doc in docs]
 
@@ -114,12 +127,13 @@ def export_csv(filename):
     for doc in flat_docs:
         keys.update(doc.keys())
     keys = sorted(keys)
-
+    if os.path.exists(filename):
+        os.remove(filename)
     with open(filename, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=keys)
         writer.writeheader()
         writer.writerows(flat_docs)
-    print(f"Đã xuất CSV: {filename}")
+    mb.showinfo("information",f"Đã xuất CSV: {filename}")
 
 # Hàm xuất JSON
 def export_json(filename):
@@ -129,10 +143,9 @@ def export_json(filename):
         return
     docs = [sort_doc(d) for d in docs]
     with open(filename, "w", encoding="utf-8") as f:
-        json.dump(docs, f, ensure_ascii=False, indent=4)
-    print(f"Đã xuất JSON: {filename}")
+        json.dump(docs, f, ensure_ascii=False, indent=4,default=tranfer_data_json)
+    mb.showinfo("information",f"Đã xuất JSON: {filename}")
 def check_phone(phone):
-    """Kiểm tra số điện thoại"""
     if not phone or not phone.strip():
         return True  # Cho phép rỗng
     phone = phone.strip()
@@ -156,6 +169,7 @@ def check_valid_data(docs):
     # Kiểm tra tên sản phẩm
     try:
         product_name = docs.get("product_name", "")
+        print(check_text(product_name))
         if not check_text(product_name):
             mb.showerror("Lỗi", "Tên sản phẩm không hợp lệ!")
             return False
@@ -169,8 +183,8 @@ def check_valid_data(docs):
                 mb.showerror("Lỗi", "Địa chỉ nhập khẩu không hợp lệ!")
                 return False
             sdt_nhap = importer.get("sdt_nhap", "")
-            if sdt_nhap and not sdt_nhap.isdigit():
-                mb.showerror("Lỗi", "SĐT nhập khẩu phải là số!")
+            if sdt_nhap and not check_phone(sdt_nhap):
+                mb.showerror("Lỗi", "SĐT không hợp lệ!")
                 return False
         # Kiểm tra nhà sản xuất
         manufacturer = docs.get("manufacturer", {})
@@ -182,8 +196,8 @@ def check_valid_data(docs):
                 mb.showerror("Lỗi", "Địa chỉ sản xuất không hợp lệ!")
                 return False
             sdt_xuat = manufacturer.get("sdt_xuat", "")
-            if sdt_xuat and not sdt_xuat.isdigit():
-                mb.showerror("Lỗi", "SĐT sản xuất phải là số!")
+            if sdt_xuat and not check_phone(sdt_xuat):
+                mb.showerror("Lỗi", "SĐT không hợp lệ!")
                 return False
         # Kiểm tra ngày sản xuất, hạn sử dụng
         nsx = docs.get("manufacturing_date", "")
@@ -233,6 +247,7 @@ def validate_data(stats,folder,images,idx,frame):
         return
     #thêm & chuyển data
     document["image_path"] = os.path.join(folder,images[idx])
+    document["image_base64"] = encode_image(os.path.join(folder,images[idx]))
     document["image_name"] = images[idx]
     document["manufacturing_date"] = convert_date_format(document["manufacturing_date"])
     document["expiry_date"] = convert_date_format(document["expiry_date"])
@@ -240,18 +255,18 @@ def validate_data(stats,folder,images,idx,frame):
     # format lưu ý
     info_text = (
     f"Tên sản phẩm: {document.get('product_name', '')}\n"
-    f"Nhà sản xuất:\n"
+    f"Nhà nhập khẩu:\n"
     f"    Tên: {document.get('importer', {}).get('name_nhap', '')}\n"
     f"    Địa chỉ: {document.get('importer', {}).get('address_nhap', '')}\n"
     f"    SĐT: {document.get('importer', {}).get('sdt_nhap', '')}\n"
-    f"Nhà phân phối:\n"
+    f"Nhà sản xuất:\n"
     f"    Tên: {document.get('manufacturer', {}).get('name_xuat', '')}\n"
     f"    Địa chỉ: {document.get('manufacturer', {}).get('address_xuat', '')}\n"
     f"    SĐT: {document.get('manufacturer', {}).get('sdt_xuat', '')}\n"
-    f"Ngày sản xuất: {document.get('manufacturing_date', '')}\n"
-    f"Hạn sử dụng: {document.get('expiry_date', '')}\n"
+    f"Ngày sản xuất: {tranfer_data_json(document.get('manufacturing_date', ''))}\n"
+    f"Hạn sử dụng: {tranfer_data_json(document.get('expiry_date', ''))}\n"
     f"Loại sản phẩm: {document.get('type', '')}"
-    )
+)
     
     confirm = mb.askyesno(
             "Xác nhận thông tin",
@@ -259,7 +274,6 @@ def validate_data(stats,folder,images,idx,frame):
         )
     # download dữ liệu
     if confirm:
-        mb.showinfo("information", "Dữ liệu đã được lưu!")
         check = False
         for i,item in enumerate(datas):
             if item.get("image_name") == images[idx]:
@@ -276,6 +290,7 @@ def validate_data(stats,folder,images,idx,frame):
             update_database(document)
         else:
             insert_database(document)
+        mb.showinfo("information", "Dữ liệu đã được lưu!")
         from interface import next_image
         next_image(folder,frame,stats)
     else:

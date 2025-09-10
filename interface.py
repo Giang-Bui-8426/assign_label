@@ -15,17 +15,13 @@ from database import Database
 
 image_files = []
 index_img = 0
-db = Database()
-def load_index(folder_path): # load index save
+def load_index(folder_path):
     global index_img
     if os.path.exists("storesIndex.json"):
         with open("storesIndex.json") as file:
             stores = json.load(file)
-            if stores["folder_path"] == folder_path:
-                if db.get_product(image_files[index_img]):
-                    index_img = stores["last_index"]+1
-                else:
-                    index_img=stores["last_index"]
+            if stores.get("folder_path") == folder_path:
+                index_img = stores.get("last_index", 0)
 def show_image(folder, filename, label_widget, size=(1200, 800),rotate_angle=0):
     image_path = os.path.join(folder, filename)
     if not os.path.exists(image_path):
@@ -39,7 +35,7 @@ def show_image(folder, filename, label_widget, size=(1200, 800),rotate_angle=0):
         label_widget.image = img_tk # lưu img vào biến của tkinter 
         label_widget.config(image=img_tk, text="") # thay đổi tt hiển thị lên ảnh 
     except Exception as e:
-        label_widget.config(text=f"Lỗi load ảnh: {e} or bạn đã gán hết nhãn", image="")
+        label_widget.config(text=f"Lỗi load ảnh: {e} ", image="")
     
 def handle_files(folder_path, img_label): # xử lí lấy file hình ảnh
     global image_files
@@ -82,6 +78,8 @@ def on_close(second,frame,folder):
             json.dump(save,file)
         second.destroy()
         frame.deiconify()
+        from logic import db
+        db.close_connection()
 def open_second_window(app,folder):
     variable_name ={"product_name" :"" ,
                     "importer" : {"name_nhap" :"" , "address_nhap" : "", "sdt_nhap" : ""},
@@ -198,8 +196,8 @@ def open_second_window(app,folder):
     product_info_frame = tb.LabelFrame(scroll_frame, text="Thông Tin Sản Phẩm", padding=15, style="success.TLabelframe")
     product_info_frame.pack(fill="x", padx=15, pady=8)
     
-    create_entry_field(product_info_frame, "Ngày sản xuất:", "manufacturing_date")
-    create_entry_field(product_info_frame, "Hạn sử dụng:", "expiry_date")
+    create_entry_field(product_info_frame, "Ngày sản xuất (dd/mm/yyyy):", "manufacturing_date")
+    create_entry_field(product_info_frame, "Hạn sử dụng (dd/mm/yyyy) :", "expiry_date")
     create_entry_field(product_info_frame, "Loại sản phẩm:", "type")
                 
 

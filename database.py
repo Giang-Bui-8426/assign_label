@@ -27,7 +27,7 @@ class Database:
 
     def create_indexes(self): # tạo index
         try:
-            self.products_collection.create_index("image_name", unique=True, background=True)
+            self.products_collection.create_index("image_name",unique=True, background=True)
             self.products_collection.create_index("importer_id",background=True)
             self.products_collection.create_index("manufacturer_id",background=True)
         except Exception as e:
@@ -49,6 +49,7 @@ class Database:
             for j in range(len(sv_importer)):
                 doc = {
                     "image_name": datas[j].get('image_name', ''),
+                    "image_bas64": datas[j].get('image_base64',''),
                     "image_path": datas[j].get('image_path', ''),
                     "image_base64": datas[j].get('image_base64', '') ,
                     "product_name": datas[j].get('product_name', ''),
@@ -61,7 +62,7 @@ class Database:
                     "updated_at": datetime.now()
                     }
                 docs.append(doc)
-            self.products_collection.insert_many(docs)
+            self.products_collection.insert_many(docs,ordered=False)
             return True
         except Exception as e:
             logger.error(f"Lỗi thêm sản phẩm: {e}")
@@ -78,6 +79,7 @@ class Database:
                         "as": "manufacturer"
                     }
                 },
+                {"$unwind": {"path": "$manufacturer", "preserveNullAndEmptyArrays": True}},
                 {
                     "$lookup": {
                         "from": "importers",
@@ -86,6 +88,7 @@ class Database:
                         "as": "importer"
                     }
                 },
+                {"$unwind": {"path": "$importer", "preserveNullAndEmptyArrays": True}},
                 {
                     "$project": {
                         "_id": 0,
@@ -148,7 +151,7 @@ class Database:
                         "importer": {
                             "name": "$importer.name_nhap",
                             "address": "$importer.address_nhap",
-                            "phone": "$manufacturer.sdt_nhap"
+                            "phone": "$importer.sdt_nhap"
                         },
                         "manufacturing_date": 1,
                         "expiry_date": 1,
@@ -208,5 +211,5 @@ class Database:
             logger.error(f"Lỗi cập nhật sản phẩm: {e}")
             return False
 
-def close_connection(self):
-    self.client.close()
+    def close_connection(self):
+        self.client.close()
