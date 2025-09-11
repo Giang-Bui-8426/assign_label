@@ -96,8 +96,7 @@ def date_format(date_str):
         return False
 def check_text(text):
     text = text.strip()
-    # Cho chữ cái thường + hoa, số, khoảng trắng, dấu gạch ngang, gạch dưới, và unicode (dấu tiếng Việt)
-    if re.search(r"[^a-zA-Z0-9À-ỹ\s\-_]", text):
+    if text and not re.fullmatch(r"[a-zA-Z0-9À-ỹ\s\-_&/]+", text):
         return False
     return True
 def flatten_dict(doc, parent_key='', sep='.'):
