@@ -48,11 +48,11 @@ def is_empty(doc):
     return True
 def convert_date_format(date_str):
     if not date_str or not date_str.strip():
-        return None
+        return ""
     try:
         return datetime.strptime(date_str.strip(), "%d/%m/%Y")
     except ValueError:
-        return None
+        return ""
 def load_data(stats,name_image):
     try:
         doc = next((d for d in datas if d.get("image_name") == name_image), {})
@@ -66,7 +66,7 @@ def load_data(stats,name_image):
                         item.insert(0, doc.get(key, {}).get(k, ""))
                 else:
                     value.delete(0, "end")
-                    value.insert(0, str(doc.get(key, "")))   
+                    value.insert(0, tranfer_data_json(doc.get(key, "")))   
     except Exception as e:
         print(f" Lỗi trong load_data({name_image}): {e}")
 def image_to_base64(image_path): # chuyen doi base64
@@ -96,8 +96,7 @@ def date_format(date_str):
         return False
 def check_text(text):
     text = text.strip()
-    # Cho chữ cái thường + hoa, số, khoảng trắng, dấu gạch ngang, gạch dưới, và unicode (dấu tiếng Việt)
-    if re.search(r"[^a-zA-Z0-9À-ỹ\s\-_]", text):
+    if text and not re.fullmatch(r"[a-zA-Z0-9À-ỹ\s\-_&/.,()]+", text):
         return False
     return True
 def flatten_dict(doc, parent_key='', sep='.'):
@@ -128,7 +127,7 @@ def export_csv(filename):
     keys = sorted(keys)
     if os.path.exists(filename):
         os.remove(filename)
-    with open(filename, "w", newline="", encoding="utf-8") as f:
+    with open(filename, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=keys)
         writer.writeheader()
         writer.writerows(flat_docs)
@@ -146,7 +145,7 @@ def export_json(filename):
     mb.showinfo("information",f"Đã xuất JSON: {filename}")
 def check_phone(phone):
     if not phone or not phone.strip():
-        return True  # Cho phép rỗng
+        return True  
     phone = phone.strip()
     return phone.isdigit() and len(phone) >= 8 and len(phone) <= 15
 def update_database(data):
@@ -168,7 +167,6 @@ def check_valid_data(docs):
     # Kiểm tra tên sản phẩm
     try:
         product_name = docs.get("product_name", "")
-        print(check_text(product_name))
         if not check_text(product_name):
             mb.showerror("Lỗi", "Tên sản phẩm không hợp lệ!")
             return False

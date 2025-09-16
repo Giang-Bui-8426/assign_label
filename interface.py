@@ -11,8 +11,9 @@ import csv
 import json
 import tkinter.font as tkFont
 from database import Database
+from pillow_heif import register_heif_opener
 
-
+register_heif_opener()
 image_files = []
 index_img = 0
 def load_index(folder_path):
@@ -37,12 +38,17 @@ def show_image(folder, filename, label_widget, size=(1200, 800),rotate_angle=0):
     except Exception as e:
         label_widget.config(text=f"Lỗi load ảnh: {e} ", image="")
     
-def handle_files(folder_path, img_label): # xử lí lấy file hình ảnh
+def handle_files(folder_path, img_label):  # xử lí lấy file hình ảnh
     global image_files
     global index_img
     try:
         files = os.listdir(folder_path)
-        image_files = [f for f in files if f.lower().endswith((".png", ".jpg", ".jpeg", ".gif"))] # kiểm tra đuôi hình ảnh
+        image_files = [
+            f for f in files if f.lower().endswith((
+                ".png", ".jpg", ".jpeg", ".gif",
+                ".heic", ".heif", ".tiff", ".bmp", ".webp", ".jfif"
+            ))
+        ]
         if image_files:
             load_index(folder_path)
             show_image(folder_path, image_files[index_img], img_label)
